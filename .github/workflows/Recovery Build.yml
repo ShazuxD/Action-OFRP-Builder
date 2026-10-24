@@ -152,3 +152,90 @@ jobs:
           Target: ${{ github.event.inputs.BUILD_TARGET }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        
+    - name: SSH into runner (Pinggy)
+      if: ${{ !cancelled() && github.event.inputs.ENABLE_SSH == 'true' }}
+      env:
+        PUBKEY: ${{ secrets.SSH_PUBLIC_KEY }}
+        SESSION_MINUTES: ${{ github.event.inputs.SSH_MINUTES || '60' }}
+      run: |
+        # ---- validate key ----
+        echo "$PUBKEY" > /tmp/key.pub
+        case "$PUBKEY" in
+          ssh-ed25519\ *|ssh-rsa\ *|ecdsa-sha2-*) ;;
+          *) echo "SSH_PUBLIC_KEY secret is missing or not a public key."; exit 1 ;;
+        esac
+        ssh-keygen -l -f /tmp/key.pub || { echo "Invalid public key"; exit 1; }
+
+        # ---- key-only sshd ----
+        sudo apt-get install -y openssh-server
+        sudo mkdir -p /run/sshd
+        sudo tee /etc/ssh/sshd_config.d/00-hardening.conf > /dev/null << 'CONF'
+        PasswordAuthentication no
+        KbdInteractiveAuthentication no
+        PermitRootLogin no
+        PubkeyAuthentication yes
+        AllowUsers runner
+        MaxAuthTries 3
+        CONF
+        sudo systemctl restart ssh || sudo service ssh restart
+        sudo passwd -l runner || true
+        mkdir -p ~/.ssh
+        cat /tmp/key.pub > ~/.ssh/authorized_keys
+        chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys
+
+        # ---- tunnel ----
+        start_tunnel() {
+          pkill -f "tcp@free.pinggy.io" 2>/dev/null || true
+          pkill -f "tail -f /dev/null" 2>/dev/null || true
+          : > /tmp/pinggy.log
+          ( tail -f /dev/null | ssh -tt -p 443 \
+              -R0:localhost:22 \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ServerAliveInterval=30 \
+              -o ServerAliveCountMax=3 \
+              -o ExitOnForwardFailure=yes \
+              tcp@free.pinggy.io > /tmp/pinggy.log 2>&1 ) &
+          for i in $(seq 1 30); do
+            URL=$(grep -oE 'tcp://[A-Za-z0-9.-]+:[0-9]+' /tmp/pinggy.log | tail -1)
+            [ -n "$URL" ] && return 0
+            sleep 2
+          done
+          return 1
+        }
+
+        ok=0
+        for try in 1 2 3; do
+          if start_tunnel; then ok=1; break; fi
+          echo "Tunnel attempt $try failed, retrying..."
+          cat /tmp/pinggy.log
+        done
+        if [ "$ok" != "1" ]; then
+          echo "Could not open tunnel. Log:"
+          cat /tmp/pinggy.log
+          exit 1
+        fi
+
+        END=$(( $(date +%s) + SESSION_MINUTES * 60 ))
+
+        while [ "$(date +%s)" -lt "$END" ]; do
+          if [ -f /tmp/continue ]; then echo "Stop file found, ending."; break; fi
+
+          if ! pgrep -f "tcp@free.pinggy.io" > /dev/null; then
+            echo "Tunnel dropped, reconnecting..."
+            start_tunnel || { sleep 5; continue; }
+          fi
+
+          URL=$(grep -oE 'tcp://[A-Za-z0-9.-]+:[0-9]+' /tmp/pinggy.log | tail -1)
+          HP=${URL#tcp://}; HOST=${HP%:*}; PORT=${HP##*:}
+
+          echo "=============================================="
+          echo "SSH      : ssh -p $PORT runner@$HOST"
+          echo "Build dir: $GITHUB_WORKSPACE/workspace"
+          echo "Time left: $(( (END - $(date +%s)) / 60 )) min"
+          echo "(run 'touch /tmp/continue' in the session to stop early)"
+          echo "=============================================="
+          sleep 30
+        done
