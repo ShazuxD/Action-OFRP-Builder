@@ -10,7 +10,7 @@ on:
       MANIFEST_BRANCH:
         description: 'MANIFEST_BRANCH'
         required: true
-        default: '11.0'
+        default: '12.1'
       DEVICE_TREE_URL:
         description: 'DEVICE_TREE_URL'
         required: true
@@ -126,6 +126,7 @@ jobs:
         set +e
         source build/envsetup.sh
         rm -rf bootable/recovery &&git clone https://github.com/ShazuxD/bootable_recovery -b fox_12.1 bootable/recovery 
+        rm -rf system/update_engine &&git clone https://github.com/ShazuxD/update_engine -b android-12.1 system/update_engine
         export ALLOW_MISSING_DEPENDENCIES=true
         set -e
         lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng && make clean && mka adbd ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
