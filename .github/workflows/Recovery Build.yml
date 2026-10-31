@@ -41,6 +41,10 @@ on:
         description: 'BUILD_TARGET'
         required: true
         default: 'recovery'
+      ENABLE_SSH:
+        default: false
+      SSH_MINUTES:
+        default: 120
 
 jobs:
   build:
@@ -95,9 +99,9 @@ jobs:
     - name: Sync OrangeFox sources and minimal manifest
       run: |
         cd ${{ steps.pwd.outputs.workspace-folder }}
-        git clone ${{ github.event.inputs.SYNC_URL }}
-        cd sync
-        ./orangefox_sync.sh --branch ${{ github.event.inputs.MANIFEST_BRANCH }} --path ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
+        #git clone ${{ github.event.inputs.SYNC_URL }}
+        #cd sync
+        #./orangefox_sync.sh --branch ${{ github.event.inputs.MANIFEST_BRANCH }} --path ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Clone device tree
@@ -124,12 +128,12 @@ jobs:
       run: |
         cd ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
         set +e
-        source build/envsetup.sh
-        rm -rf bootable/recovery &&git clone https://github.com/ShazuxD/bootable_recovery -b fox_12.1 bootable/recovery 
-        rm -rf system/update_engine &&git clone https://github.com/ShazuxD/update_engine -b android-12.1 system/update_engine
-        export ALLOW_MISSING_DEPENDENCIES=true
-        set -e
-        lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng && make clean && mka adbd ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
+        #source build/envsetup.sh
+        #rm -rf bootable/recovery &&git clone https://github.com/ShazuxD/bootable_recovery -b fox_12.1 bootable/recovery 
+        #rm -rf system/update_engine &&git clone https://github.com/ShazuxD/update_engine -b android-12.1 system/update_engine
+        #export ALLOW_MISSING_DEPENDENCIES=true
+        #set -e
+        #lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng && make clean && mka adbd ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
       continue-on-error: true
 
